@@ -1,0 +1,204 @@
+---
+title: "Putamen scRNA-seq"
+############################################################
+# Author Guoyan Zhao                                       #
+# Department of Neuroscience                               #
+# gzhao@wustl.edu                                          #
+# Copyright (C) 2019 Washington University, St. Louis, MO. #
+# All Rights Reserved.                                     #
+############################################################
+
+output:
+  html_document:
+    theme: united
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+***
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  cache.lazy = FALSE,
+  tidy = TRUE
+)
+```
+setwd("C:/gzhao/Labs/Jinbin_Xu_Putamen/Putamen_S2_CleanObject/")
+library(Seurat)
+library(sctransform)
+library(RColorBrewer) # colorRampPalette(), brewer.pal
+library(ggplot2) # qplot(), position_nudge(), geom_text()
+library(cowplot) # for plot_grid
+library(gplots) # for heatmap2
+library(dplyr) # for mutate, top_n# Setup the Seurat Object
+
+```{}
+# Load the dataset
+data_integrated_original <- readRDS( file = "Putamen_cleanObj_dim20_res0.1.rds", refhook = NULL)
+```
+
+# Visualization
+p1 <- DimPlot(data_integrated, reduction = "umap", group.by = "Genotype", pt.size = 0.5, cols=c("red", "green", "blue"))
+p2 <- DimPlot(data_integrated, reduction = "umap", label = TRUE )
+png("Putamen_cleanObj_dim20_res0.1_cellcluster.png",      
+    width = 10*300,        # 5 x 300 pixels
+    height = 4*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 5)        # smaller font size
+  plot_grid(p1, p2)
+dev.off()
+
+```{}
+# ###############################################################
+# merge all neuronal subtypes
+# ###############################################################
+```{}
+# assign cell type to each cluster, merge all neuronal subtypes
+# 0 = Olig 
+# 1 = Neuron: N-D1
+# 2 = Ast
+# 3 = Neuron: N-D2
+# 4 = Immune (Microglia/T cell)
+# 5 = EP (Pericyte/MSC (DCN, FLT1,  ZIC1, PDGFRB) (Endothelia/PECAM1/FLT1/)
+# 6 = OPC 
+# 7 = Neuron: N-KCNC2
+# 8 = Neuron: N-RXFP1
+# 9 = Neuron: N-TAC3
+# 10 = Unknown
+# 11 = Neuron: N-GRIK3
+
+data_integrated_NeuronMerged <- data_integrated_original
+new.cluster.ids <- c( "OLIGO",  "Neuron",  "Ast", "Neuron", "Immune", "EP",  "OPC",  "Neuron", "Neuron", "Neuron", "Unknown", "Neuron")
+names(new.cluster.ids) <- levels(data_integrated_NeuronMerged)
+data_integrated_NeuronMerged <- RenameIdents(data_integrated_NeuronMerged, new.cluster.ids)
+
+# set an order of cluster identities as follows:
+# Define an order of cluster identities
+my_levels <- c(  "Ast", "EP", "Immune", "Neuron", "OLIGO", "OPC", "Unknown")
+# Relevel object@ident
+data_integrated_NeuronMerged@active.ident <- factor(x = data_integrated_NeuronMerged@active.ident, levels = my_levels)
+
+data_integrated_NeuronMerged@meta.data$Genotype <- factor(x = data_integrated_NeuronMerged@meta.data$Genotype, levels = c("CTRL", "AD", "PD"))
+
+png("PT_WholePopulation_NeuronMerged_CellType_CellCluster.png", width = 7*300,  height = 5*300,  res = 300,  pointsize = 8)       
+DimPlot(data_integrated_NeuronMerged, reduction = "umap", label = FALSE, pt.size = 0.5) 
+dev.off()
+
+png("PT_WholePopulation_NeuronMerged_CellType_WithLabel.png", width = 5.5*600,  height = 5*600, res = 600,  pointsize = 8)       
+DimPlot(data_integrated_NeuronMerged, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend() 
+dev.off()
+
+```
+
+#########
+# heatmap of top marker genes
+DefaultAssay(data_integrated_NeuronMerged) <- "SCT"
+Cluster_markers_NeuronMerged <- FindAllMarkers(data_integrated_NeuronMerged, only.pos = TRUE, min.pct = 0.20, logfc.threshold = 0.25)
+top10 <- Cluster_markers_NeuronMerged %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC)
+
+DefaultAssay(data_integrated_NeuronMerged) <- "RNA"
+data_integrated_NeuronMerged <- NormalizeData(data_integrated_NeuronMerged, verbose = FALSE)
+all.genes <- rownames(data_integrated_NeuronMerged)
+data_integrated_NeuronMerged <- ScaleData(data_integrated_NeuronMerged, features = all.genes)
+
+DoHeatmap(Cluster_markers_NeuronMerged, features = top10$gene) + NoLegend()
+
+png("PT_WholePopulation_NeuronMerged_CellTypeMarker_Heatmap_downsampled.png",  width = 12*300, height = 13*300,  res = 300,  pointsize = 5)  
+    #DoHeatmap(data_integrated_NeuronMerged , features = top10$gene, size = 3, angle = 90)
+    DoHeatmap(subset(data_integrated_NeuronMerged, downsample = 2000), features = top10$gene, size = 8,angle = 45)
+dev.off()
+
+################
+# VlnPlot
+# markers for all cell types
+marker_genes <- c( "AQP4",  "RGS5", "PTPRC",  "SYT1",  "PLP1", "MEGF11")
+
+marker_genes <- c( "GFAP", "FLT1", "CSF1R", "RBFOX3", "MBP", "VCAN")
+
+png("PT_WholePopulation_NeuronalMerged_VlnPlot_MajorCellType.png", width = 9*300, height = 8*300,  res = 300,  pointsize = 4)  
+  VlnPlot(data_integrated_NeuronMerged, assay = "RNA", features = marker_genes, pt.size = 0.1, ncol = 3)
+dev.off()
+
+####################################################
+# FeaturePlot best effect, 12 genes, 11X8, nCol = 4
+
+png("PT_WholePopulation_NeuronMerged_CellType_Marker_FeaturePlot.png",      
+    width = 12*300,        # 5 x 300 pixels
+    height = 12*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 5)        # smaller font size
+
+  FeaturePlot(data_integrated_NeuronMerged, features = marker_genes, min.cutoff = "q5", max.cutoff = "q95", ncol = 3)
+dev.off()
+# use "no.legend = FALSE" to add ledgend
+
+#################
+# Dot plot
+marker_genes <- c( "AQP4","GFAP", "FLT1", "RGS5", "PECAM1", "DCN", "PDGFRB",  "CSF1R", "PTPRC", "RBFOX3", "SYT1" ,"MBP", "PLP1", "MEGF11","VCAN" )
+png("PT_WholePopulation_NeuronMerged_DotPlot_MajorCellType.png",      
+    width = 7*600,        # 5 x 300 pixels
+    height = 3*600,
+    res = 600,            # 300 pixels per inch
+    pointsize = 5)        # smaller font size
+  DotPlot(data_integrated_NeuronMerged, assay = "SCT", features = marker_genes, dot.scale = 6) + RotatedAxis()
+dev.off()
+
+```{}
+# plot propertion of cells
+# ggplot use dataframe as input, worked!
+# margin 1 calculate for each cluster (cell type) the percentage of cell from each subject in the given cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(data_integrated_NeuronMerged), data_integrated_NeuronMerged$orig.ident), margin = 1) *100)
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL_Pu_62464", "CTRL_Pu_63756", "CTRL_Pu_64271", "CTRL_Pu_65229", "AD_Pu_12265", "AD_Pu_12545", "AD_Pu_61770", "AD_Pu_64951", "PD_Pu_13316", "PD_Pu_1654", "PD_Pu_5466", "PD_Pu_6087"))
+
+png("PT_WholePopulation_NeuronMerged_CellDistributionInEachCluster_byPatient.png",  width = 4*300,  height = 3*300, res = 300, pointsize = 6)   
+P <- ggplot(data_to_plot, aes(fill=Var2, y=Freq, x=Var1)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Cell cluster") + ylab("Frequency") +
+    scale_fill_manual(values = col_vector) 
+    
+P + labs(fill = "Subject") + theme(axis.text = element_text(family = "Courier", colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text(family = "Courier", color = "black", size = 7),
+  legend.text = element_text(family = "Courier", color = "black", size = 7))
+dev.off()    
+
+# margin 1 calculate for each cluster (cell type) the percentage of cell from each genotype group in the given cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(data_integrated_NeuronMerged), data_integrated_NeuronMerged$Genotype), margin = 1) *100)
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL", "AD", "PD"))
+
+png("PT_WholePopulation_NeuronMerged_CellDistributionInEachCluster_bydisease.png",  width = 4*600, height = 3*600, res = 600, pointsize = 6)   
+P <- ggplot(data_to_plot, aes(fill=Var2, y=Freq, x=Var1)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Cell cluster") + ylab("Frequency") +
+    scale_fill_manual(values = c( "green", "red", "blue") )
+    
+P + labs(fill = "Diagnosis") + theme(axis.text = element_text(family = "Courier", colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text(family = "Courier", color = "black", size = 7),
+  legend.text = element_text(family = "Courier", color = "black", size = 7))
+dev.off()
+
+# margin 2 calculate for each subject the percentage of cells from each cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(data_integrated_NeuronMerged), data_integrated_NeuronMerged$orig.ident), margin = 2) *100)
+
+# get genotype
+#data_to_plot$Genotype <- sapply(strsplit(as.character(data_to_plot$Var2),"_"), `[`, 1)
+
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL_Pu_62464", "CTRL_Pu_63756", "CTRL_Pu_64271", "CTRL_Pu_65229", "AD_Pu_12265", "AD_Pu_12545", "AD_Pu_61770", "AD_Pu_64951", "PD_Pu_13316", "PD_Pu_1654", "PD_Pu_5466", "PD_Pu_6087"))
+
+png("PT_WholePopulation_NeuronMerged_CellDistribution_CellTypeInEachPatient.png", width = 4*300,  height = 3*300,  res = 300,  pointsize = 6)  
+P <- ggplot(data_to_plot, aes(fill=Var1, y=Freq, x=Var2)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Cell cluster") + ylab("Frequency") +
+    scale_fill_manual(values = col_vector )
+    
+P + labs(fill = "Diagnosis") + theme(axis.text = element_text(family = "Courier", colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text(family = "Courier", color = "black", size = 7),
+  legend.text = element_text(family = "Courier", color = "black", size = 7))
+dev.off()  
+```
+
+```{r save data}
+
+# save the workspace to the file .RData in the cwd
+# load a workspace into the current session
+# if you don't specify the path, the cwd is assumed
+load("myfile.RData") 
+save.image("Putamen_WholePopulation_analysis.RData")

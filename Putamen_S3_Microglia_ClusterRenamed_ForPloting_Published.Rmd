@@ -1,0 +1,110 @@
+---
+title: "Putamen scRNA-seq"
+############################################################
+# Author Guoyan Zhao                                       #
+# Department of Neuroscience                               #
+# gzhao@wustl.edu                                          #
+# Copyright (C) 2019 Washington University, St. Louis, MO. #
+# All Rights Reserved.                                     #
+############################################################
+
+output:
+  html_document:
+    theme: united
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+***
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  cache.lazy = FALSE,
+  tidy = TRUE
+)
+```
+setwd("C:/gzhao/Labs/Jinbin_Xu_Putamen/Putamen_S3_Microglia_analysis_Reintegration/")
+
+library(Seurat)
+library(sctransform)
+library(RColorBrewer) # colorRampPalette(), brewer.pal
+library(ggplot2) # qplot(), position_nudge(), geom_text()
+library(cowplot) # for plot_grid
+library(gplots) # for heatmap2
+library(dplyr) # for mutate, top_n# Setup the Seurat Object
+
+```{}
+# Load the dataset
+Microglia_obj_Final <- readRDS( file = "PT_Microglia_original_dim10_res0.15_IntegratedObj_Final.rds", refhook = NULL)
+
+DimPlot(Microglia_obj_Final, reduction = "umap", label = TRUE)
+
+# Change Genotype from "ct" to "CTRL" issue 
+Microglia_obj_Final@meta.data$Genotype <- factor(Microglia_obj_Final@meta.data$Genotype,levels = c("CTRL", "AD", "PD"))
+
+
+# assigned new cell identity to each cluster
+NewClusterID <- c( "HS", "ACT")
+names(NewClusterID) <- levels(Microglia_obj_Final)
+Microglia_obj_Final <- RenameIdents(Microglia_obj_Final, NewClusterID)
+Microglia_obj_Final[["CellTypeID"]] <- Idents(object = Microglia_obj_Final)
+
+```
+
+```{}
+# to show how many cells in each cluster by genotype
+table(Microglia_obj_Final@active.ident, Microglia_obj_Final@meta.data$Genotype )
+
+DimPlot(Microglia_obj_Final, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+png("PT_Microglia_ClusterRenamed_CellCluster_DefinedColor.png",   
+    width = 4*300,        # 5 x 300 pixels
+    height = 3*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 12)        # smaller font size
+  DimPlot(Microglia_obj_Final, reduction = "umap", label = FALSE, cols =c("cornflowerblue", "coral3"))
+dev.off()
+
+png("PT_Microglia_ClusterRenamed_CellCluster_ByDisease.png",   
+    width = 4*300,        # 5 x 300 pixels
+    height = 3*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 12)        # smaller font size
+  DimPlot(Microglia_obj_Final, reduction = "umap", label = FALSE, group.by = "Genotype", cols =c("green", "red", "blue"))
+dev.off()
+```
+
+```{}
+# plot gene expression, should use normalized RNA assay data
+
+DefaultAssay(Microglia_obj_Final) <- "RNA"
+Microglia_obj_Final <- NormalizeData(Microglia_obj_Final, verbose = FALSE)
+
+################
+# VlnPlot
+# Conserved marker genes shared by all 3 dataset:
+marker_genes <- c("FRMD4A",  "APOE", "B2M", "ST6GALNAC3", "HLA-DRA" , "FTL")
+
+png("PT_Microglia_ClusterRenamed_Marker_VlnPlot_Shared1_SplitByCellType.png",
+    width = 9*300, height = 5*300, res = 300, pointsize = 4) 
+   VlnPlot(Microglia_obj_Final, assay = "RNA", features = marker_genes, pt.size = 0, split.by = "CellTypeID",group.by = "Genotype", cols =c("cornflowerblue", "coral3"), ncol = 3)
+dev.off()
+
+####################################################
+# FeaturePlot best effect, 12 genes, 11X8, nCol = 4
+png("PT_Microglia_ClusterRenamed_Marker_FeaturePlot_shared1.png",      
+    width = 12*300, height = 12*300, res = 300, pointsize = 5)  
+  FeaturePlot(Microglia_obj_Final, features = marker_genes, min.cutoff = "q5", max.cutoff = "q95", ncol = 3)
+dev.off()
+# use "no.legend = FALSE" to add ledgend
+
+```
+
+
+```{r save data}
+
+# save the workspace to the file .RData in the cwd
+# load a workspace into the current session
+# if you don't specify the path, the cwd is assumed
+load("myfile.RData") 
+save.image("PT_Microglia_ClusterRenamed_ForPloting.RData")
+

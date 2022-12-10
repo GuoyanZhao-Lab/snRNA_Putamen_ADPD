@@ -1,0 +1,152 @@
+---
+title: "Jinbin Xu Putamen"
+############################################################
+# Author Guoyan Zhao                                       #
+# Department of Neuroscience                               #
+# gzhao@wustl.edu                                          #
+# Copyright (C) 2019 Washington University, St. Louis, MO. #
+# All Rights Reserved.                                     #
+############################################################
+
+output:
+  html_document:
+    theme: united
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+***
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  cache.lazy = FALSE,
+  tidy = TRUE
+)
+```
+setwd("C:/gzhao/Labs/Jinbin_Xu_Putamen/Putamen_S2_CleanObject/")
+
+### Setup the Seurat Object
+```{r init, message=FALSE}
+library(Seurat)
+library(sctransform)
+library(RColorBrewer) # colorRampPalette(), brewer.pal
+library(ggplot2) # qplot(), position_nudge(), geom_text()
+library(cowplot) # for plot_grid
+library(gplots) # for heatmap2
+```
+
+```{}
+# Load the dataset
+data_original <- readRDS( file = "C:/gzhao/Labs/Jinbin_Xu_Putamen/Putamen_S1_createObj/ Putamen_S1_CreateObject_dim20_res0.15_obj_cleaned.rds", refhook = NULL)
+```
+
+```{}
+obj.list <- SplitObject(data_original, split.by = "orig.ident")
+
+for (i in 1:length(obj.list)) {
+    obj.list[[i]] <- SCTransform(obj.list[[i]],  vars.to.regress = c("nCount_RNA", "percent.mt"),verbose = FALSE)
+}
+
+#adjust max memory for global environment
+options(future.globals.maxSize= 53687091200)
+
+###integrate data
+alldata.features <- SelectIntegrationFeatures(object.list = obj.list, nfeatures = 3000)
+alldata_prepsct <- PrepSCTIntegration(object.list = obj.list, anchor.features = alldata.features, verbose = FALSE)
+alldata.anchors <- FindIntegrationAnchors(object.list = alldata_prepsct, normalization.method = "SCT", anchor.features = alldata.features, verbose = FALSE)
+data_integrated <- IntegrateData(anchorset = alldata.anchors, normalization.method = "SCT", verbose = FALSE)
+
+data_integrated <- RunPCA(data_integrated,  npcs = 30)
+
+#set dims parameter
+dims=1:20
+data_integrated <- RunUMAP(data_integrated, reduction = "pca", dims = dims)
+data_integrated <- FindNeighbors(data_integrated, reduction = "pca", dims = dims)
+data_integrated <- FindClusters(data_integrated, resolution = 0.1)
+
+# Visualization
+p1 <- DimPlot(data_integrated, reduction = "umap", group.by = "orig.ident")
+p2 <- DimPlot(data_integrated, reduction = "umap", label = TRUE)
+
+png("Putamen_cleanObj_dim20_res0.1_CellCluster.png",    
+  width = 12*300,        # 5 x 300 pixels
+  height = 5*300,
+  res = 300,            # 300 pixels per inch
+  pointsize = 8)        # smaller font size
+    plot_grid(p1, p2)
+dev.off()
+```
+# find conserved marker gene for each cluster
+DefaultAssay(data_integrated) <- "SCT"
+
+Conserved_cluster_markers <- list() # list starting subscript is 1, can't use 0
+for (i in 0:(nlevels(data_integrated@active.ident)-1)) {
+  Conserved_cluster_markers[[i+1]] <- FindConservedMarkers(data_integrated, assay = "SCT", slot = "data", test.use = "wilcox", min.pct = 0.2, ident.1 = i, grouping.var = "Genotype", verbose = FALSE, only.pos = TRUE)
+}
+
+```{}
+DefaultAssay(data_integrated) <- "RNA"
+
+# Normalize RNA data for visualization purposes
+data_integrated <- NormalizeData(data_integrated, verbose = FALSE)
+
+# plot marker genes 3x4
+marker_genes <- c( "AQP4", "RGS5", "PTPRC", "SYT1", "PLP1", "MEGF11")
+
+png("Putamen_cleanObj_dim20_res0.1_Marker_FeaturePlot.png",      
+    width = 16*300,        # 5 x 300 pixels
+    height = 10*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 5)        # smaller font size
+
+FeaturePlot(data_integrated, features = marker_genes, min.cutoff = "q9", max.cutoff = "q95", ncol = 4)
+dev.off()
+# use "no.legend = FALSE" to add ledgend
+
+# Violin plot
+png("Putamen_cleanObj_dim20_res0.1_Marker_VlnPlot_FigS1.png",      
+    width = 11*300,        # 5 x 300 pixels
+    height = 8*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 5)        # smaller font size
+VlnPlot(data_integrated, assay = "RNA", features = marker_genes) 
+dev.off()
+```
+
+# subset clusters and write the object out
+```{r subset cess from Granule cell cluster for further analysis}
+saveRDS(data_integrated, file = "Putamen_cleanObj_dim20_res0.1.rds")
+
+# Oligodendrocyte
+subcluster <- subset(data_integrated, idents  = c("0"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter0_Oligodendrocyte.rds")
+
+# Astrocyte
+subcluster <- subset(data_integrated, idents  = c("2"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter2_Astrocyte.rds")
+
+# Hematopoietic
+subcluster <- subset(data_integrated, idents  = c("4"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter4_HematopoieticMicroglia.rds")
+
+# EndotheliaPericypte
+subcluster <- subset(data_integrated, idents  = c("5"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter5_EndotheliaPericyte.rds")
+
+# OPC
+subcluster <- subset(data_integrated, idents  = c("6"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter6_OPC.rds")
+
+# cluster 10 is novel with many novel markers. Express astrocyte markers at lower
+# levels, have very few cells, 
+subcluster <- subset(data_integrated, idents  = c("10"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter10_Unknown.rds")
+
+# neurons
+subcluster <- subset(data_integrated, idents  = c("1", "3", "7", "8", "9", "11"))
+saveRDS(subcluster, file = "Putamen_cleanObj_dim20_res0.1_cluter1_3_7_8_9_11_Neuron.rds")
+
+```
+
+```{}
+# save workspace
+save.image("Putamen_S2_cleanObj_dim20_res0.1.RData")

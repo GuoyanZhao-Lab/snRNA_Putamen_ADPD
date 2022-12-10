@@ -1,0 +1,322 @@
+---
+title: "Xiaoying Chen scRNA-seq"
+############################################################
+# Author Guoyan Zhao                                       #
+# Department of Neuroscience                               #
+# gzhao@wustl.edu                                          #
+# Copyright (C) 2019 Washington University, St. Louis, MO. #
+# All Rights Reserved.                                     #
+############################################################
+
+output:
+  html_document:
+    theme: united
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+***
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE,
+  cache.lazy = FALSE,
+  tidy = TRUE
+)
+```
+setwd("C:/gzhao/Labs/Jinbin_Xu_Putamen/Putamen_S3_Astrocyte_analysis_V2_integration/")
+
+library(Seurat)
+library(sctransform)
+library(RColorBrewer) # colorRampPalette(), brewer.pal
+library(ggplot2) # qplot(), position_nudge(), geom_text()
+library(cowplot) # for plot_grid
+library(gplots) # for heatmap2
+library(dplyr) # for mutate, top_n# Setup the Seurat Object
+
+```{}
+# Load the dataset
+Ast_obj_Final <- readRDS( file = "PT_Ast_RMDoublet1_dim15_res0.25_CleanObj_Final.rds", refhook = NULL)
+
+DimPlot(Ast_obj_Final, reduction = "umap", label = TRUE)
+
+```
+
+```{}
+# assign cell type to each cluster
+###################################################################
+# 0 = Ast-0 
+# 1 = Ast-1
+# 2 = Ast-2
+
+new.cluster.ids <- c( "Ast-0", "Ast-1",  "Ast-2")
+names(new.cluster.ids) <- levels(Ast_obj_Final)
+Ast_obj_Final <- RenameIdents(Ast_obj_Final, new.cluster.ids)
+
+# set the order for CTRL, AD and PD
+Ast_obj_Final@meta.data$Genotype <- factor(Ast_obj_Final@meta.data$Genotype,levels = c("CTRL", "AD", "PD"))
+
+# store the three cell type classification 
+Ast_obj_Final[["CellTypeID"]] <- Idents(object = Ast_obj_Final)
+
+# to show how many cells in each cluster by genotype
+table(Ast_obj_Final@active.ident, Ast_obj_Final@meta.data$Genotype )
+
+DimPlot(Ast_obj_Final, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+png("PT_Ast_RMDoublet1_dim15_res0.25_CellCluster_DefinedColor.png",   
+    width = 5*300,        # 5 x 300 pixels
+    height = 4*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 12)        # smaller font size
+  DimPlot(Ast_obj_Final, reduction = "umap", label = FALSE, cols =c("coral3", "deepskyblue3", "goldenrod2"))
+dev.off()
+
+png("PT_Ast_RMDoublet1_dim15_res0.25_CellCluster_ByDisease.png",   
+    width = 5*300,        # 5 x 300 pixels
+    height = 4*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 12)        # smaller font size
+  DimPlot(Ast_obj_Final, reduction = "umap", label = FALSE, group.by = "Genotype", cols =c("green", "red", "blue"))
+dev.off()
+
+
+```
+
+```{}
+# plot gene expression, should use normalized RNA assay data
+
+DefaultAssay(Ast_obj_Final) <- "RNA"
+
+################
+# VlnPlot
+# Conserved marker genes shared by all 3 dataset:
+marker_genes <- c("GPC5",  "NRXN1", "APOE", "CST3", "FTL", "CKB", "CLU", "SPARCL1", "ITM2C" , "CPE", "TUBB2B",  "VIM")
+marker_genes <- c( "ATP1B2", "GLUL", "PSAP", "GJA1", "AGT" , "ENO1", "GPR37L1", "DPP10", "GFAP" , "PLEKHA5", "VCAN" , "KAZN")
+
+# Conserved marker genes shared by PT and Grubman 13
+marker_genes <- c( "DCLK1", "SLC38A1", "TNC", "ID3", "DPP6", "FOS" , "ADCY8" ,   "DCLK2", "ZFP36L1",  "UBC" )
+
+# shared by PT and Lau: 14
+marker_genes <- c( "CD44",  "SORBS1", "ARHGEF4",  "WDR49",  "CERS6", "RNF19A" ,  "DLGAP1",  "DPYSL3" , "GLIS3" , "SNED1" , "PLXDC2")
+
+grep(pattern = "^FGF", x = rownames(x = Ast_obj_Final@assays$RNA), value = TRUE)
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_VlnPlot_Shared1.png",      
+    width = 13*300, height = 13*300, res = 300,  pointsize = 4)  
+  VlnPlot(Ast_obj_Final, assay = "RNA", features = marker_genes, pt.size = 0, cols =c("coral3", "deepskyblue3", "goldenrod2"), ncol = 4)
+dev.off()
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_VlnPlot_Shared1_SplitByCellType.png", width = 19.5*300, height = 13*300, res = 300, pointsize = 4) 
+   VlnPlot(Ast_obj_Final, assay = "RNA", features = marker_genes, pt.size = 0, split.by = "CellTypeID",group.by = "Genotype", cols =c("coral3", "deepskyblue3", "goldenrod2"), ncol = 3)
+dev.off()
+
+####################################################
+# FeaturePlot best effect, 12 genes, 11X8, nCol = 4
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_FeaturePlot_shared1.png",      
+    width = 12*300, height = 12*300, res = 300, pointsize = 5)  
+  FeaturePlot(Ast_obj_Final, features = marker_genes, min.cutoff = "q5", max.cutoff = "q95", ncol = 3)
+dev.off()
+# use "no.legend = FALSE" to add ledgend
+
+
+#################
+# Dot plot
+# markers for all cell types in reverse order
+marker_genes <- c( "GPC5",  "NRXN1", "APOE", "CST3", "FTL", "CKB", "CLU", "SPARCL1", "ITM2C" , "CPE", "TUBB2B",  "VIM", "ATP1B2", "GLUL", "PSAP", "GJA1", "AGT" , "ENO1", "GPR37L1", "DPP10", "GFAP" , "PLEKHA5", "VCAN" , "KAZN", "CD44",  "TNC")
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_DotPlot_shared_withCD44TNC.png",      
+    width = 9*300, height = 2.1*300, res = 300, pointsize = 5)   
+  DotPlot(Ast_obj_Final, assay = "SCT", features = marker_genes, dot.scale = 6) + RotatedAxis()
+dev.off()
+
+############################################
+# conserved markers identified through comparing our putamen, Grubman ec, Lau pfc, 
+# Mathys pfc, and Feleke acc 
+marker_genes <- c( "GPC5",  "NRXN1", "PLCB1", "CABLES1", "CACNB2", "GPM6A", "APOE", "AGT", "CKB", "CLU", "CST3", "FTH1", "FTL", "GJA1", "GLUL", "ITM2C", "MT1E", "MT3", "PSAP", "SPARCL1", "TUBB2B",  "VIM", "DPP10", "GFAP" , "ARHGEF4","ID3", "KAZN", "PLEKHA5", "SNED1",  "SLC38A1", "TNC", "VCAN", "CD44",  "C3", "MAOB"  )
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_DotPlot_shared_GT3_dataset.png",      
+    width = 9.5*300, height = 2.1*300, res = 300, pointsize = 5)   
+  DotPlot(Ast_obj_Final, assay = "SCT", features = marker_genes, dot.scale = 6) + RotatedAxis()
+dev.off()
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_Marker_DotPlot_splited.png",      
+    width = 8*300,  height = 6*300, res = 300, pointsize = 5)  
+  DotPlot(Ast_obj_Final, assay = "SCT", features = marker_genes, dot.scale = 6, split.by = "Genotype", cols = c("blue", "blue", "blue")) + RotatedAxis()
+dev.off()
+
+```
+# used for the paper
+# A1, A2 markers
+marker_genes <- c("SERPING1", "EMP1", "JAK1",  "FKBP5", "CD109", "STAT3")
+# DAA and Gfap High astrocyte markers
+marker_genes <- c( "DBI","LGALS1", "S100B", "ID3", "SLC38A1", "TNC")
+# activation marker
+marker_genes <- c("VIM", "MT2A", "MT1E",  "C3", "SYNM", "MAOB")
+
+marker_genes <- c("ALDH1A1", "CD38", "MAOB", "HSPH1", "SEL1L3",   "HSPB1")
+marker_genes <- c("ALDH1A1", "HSPH1", "GFAP", "CD38", "SEL1L3",   "VIM")
+
+# reactive Astrocyte markers as DEGs
+# SLC1A3 decrease in reactive astrocytes
+marker_genes <- c( "VIM", "CRYAB",  "CHI3L1",  "S100B",  "MT2A", "MT1G")
+marker_genes <- c("SLC1A2", "MT1E",  "MT1G", "MT1M", "MT1H", "MT3")
+marker_genes <- c(   "GFAP", "MT1G", "MT1M", "MT1H")
+
+# DAA signature genes from Fig. 3h
+marker_genes <- c( "PHGDH",  "FXYD6", "GFAP",  "DBI",  "HRSP12", "GSTM1", "PHGDH",  "FXYD6", "GFAP",  "DBI",  "HRSP12", "GSTM1" )
+marker_genes <- c(  "DST",  "SERPING1" , "SERPINF2" , "SERPINA3N" , "S1PR3" , "S100B" )
+marker_genes <- c(  "S100A6", "PLCE1",  "PDLIM4",  "OSMR", "LGALS1" ,  "JUN")
+marker_genes <- c(  "JUN",  "GSN" , "ENOX1" , "CXCL5" , "CNN3", "C4B")
+
+marker_genes <- c(  "CTSB",  "VIM" , "OSMR" , "SERPINA3N" , "GSN", "GGTA1")
+
+# GfapHigh astrocyte signature genes 
+marker_genes <- c("ID3","SLC38A1","SEMA6A","RGS6", "KCNJ3","ADAMTS9")
+
+# Gfap-low astrocyte signature genes
+marker_genes <- c(  "LUZP2",  "SLC7A10" , "MFGE8" , "LSAMP" , "TRPM3", "GPC5")
+
+# DEGs
+marker_genes <- c("ITM2B","ITM2C","PRNP","ITM2B","ITM2C","PRNP")
+
+# Ast-0 marker genes
+marker_genes <- c("GPC5","NRXN1","CABLES1","GRID2","FRMD4A","CACNB2")
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_ExampleGene_ForPaper4.png", width = 9*300, height = 6*300,  res = 300, pointsize = 5)  
+ VlnPlot(Ast_obj_Final, assay = "RNA", features = marker_genes, split.by = "seurat_clusters", group.by = "Genotype", pt.size = 0, ncol=3, combine = TRUE, cols = c("coral3", "deepskyblue3", "goldenrod2"))
+dev.off()
+
+# ####################################################
+# plotting DEGs
+
+# DEGs common to all clusters in both AD and PD
+marker_genes = c( "RANBP3L","DNAJA1", "KANK1" , "ITGB8", "F3", "DDIT4",   "PNISR", "SLC7A11", "HSPA1B")
+marker_genes = c( "RHOBTB3","HIBCH",  "CRYAB", "ISG15", "NFIB", "IFI6",   "LGI1", "TPD52L1","TUBB2B")
+marker_genes = c( "EGFR", "H3F3B", "SOD2", "HSPB1", "SASH1", "IFI44L", "LRP1B" ,  "HSPA1A", "OLMALINC" )
+marker_genes = c(  "CHPT1", "RPS6KA2", "RFX2", "TPCN1", "KIAA0930", "RFTN2", "FAM182B", "ZHX3"  , "PPM1B"     )
+
+png("PT_Ast_RMDoublet1_dim15_res0.25_DEGs_AllClusterAllCondition_example1.png",    # create PNG for the heat map        
+  width = 18*300,        # 5 x 300 pixels
+  height = 9*300,
+  res = 300,            # 300 pixels per inch
+  pointsize = 8)        # smaller font size
+  
+VlnPlot(Ast_obj_Final, assay = "RNA", features = marker_genes, split.by = "CellTypeID", group.by = "Genotype", pt.size = 0, combine = TRUE, cols = c( "coral3", "deepskyblue3", "goldenrod2"), ncol = 3)
+dev.off()
+
+```{}
+#num_cells <- table(Idents(Ast_obj_Final), Ast_obj_Final$Genotype)
+pct_cells <- prop.table(table(Idents(Ast_obj_Final), Ast_obj_Final$Genotype), margin = 2)
+colnames(pct_cells) <- c(paste(colnames(pct_cells), "_pct", sep=""))
+
+pct_cells <- prop.table(table(Idents(Ast_obj_Final), Ast_obj_Final$orig.ident), margin = 2) *100
+colnames(pct_cells) <- c(paste(colnames(pct_cells), "_pct", sep=""))
+
+###########################################################
+# code worked, to display the percentage of cells in each cluster
+library(reshape)
+test_data <- as.data.frame(t(as.data.frame.matrix(pct_cells)))
+Genotype <- c(rep("AD", 4), rep("CTRL", 4), rep("PD", 4))
+test_data <- cbind(test_data, Genotype)
+
+meltData <- melt(test_data, id=c("Genotype"))
+
+png("Sample_statistics_CellProportion_ScaterPlot_freeY.png",    # create PNG for the heat map        
+  width = 6*600,        # 5 x 300 pixels
+  height = 6*600,
+  res = 600,            # 300 pixels per inch
+  pointsize = 8)        # smaller font size
+ggplot(meltData, aes(x=Genotype, y=value, group = Genotype, color = Genotype, fill = Genotype)) +
+    scale_color_manual(values=c( "red","green","blue")) +
+  geom_point(position=position_jitter(w=0.1,h=0), size=3, alpha=0.8) + 
+  labs(x = "Genotype", y = "Percentage of Cell") + facet_wrap( variable ~ ., ncol=4, scales="free_y")
+dev.off()
+
+```
+
+res.aov_PercentCell <- aov(value ~ Genotype, data = meltData)
+summary(res.aov_PercentCell)
+
+#              Df Sum Sq Mean Sq F value Pr(>F)
+#Genotype     2 0.0000 0.00000       0      1
+#Residuals   33 0.9486 0.02875   
+
+TukeyHSD(res.aov_PercentCell, conf.level = 0.99)
+
+```{}
+# plot propertion of cells in individual subjects
+#library(RColorBrewer)
+# create color palette:to get 74 the most distinct colors
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+# ggplot use dataframe as input, worked!
+# margin 1 calculate for each cluster (cell type) the percentage of cell from each subject in the given cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(Ast_obj_Final), Ast_obj_Final$orig.ident), margin = 1) *100)
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL_Pu_62464", "CTRL_Pu_63756", "CTRL_Pu_64271", "CTRL_Pu_65229", "AD_Pu_12265", "AD_Pu_12545", "AD_Pu_61770", "AD_Pu_64951", "PD_Pu_13316", "PD_Pu_1654", "PD_Pu_5466", "PD_Pu_6087"))
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_CellDistributionInEachCluster_byPatient.png",  width = 4*300,  height = 3*300,  res = 300, pointsize = 6)  
+P <- ggplot(data_to_plot, aes(fill=Var2, y=Freq, x=Var1)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Cell cluster") + ylab("Frequency") +
+    scale_fill_manual(values = col_vector) 
+    
+P + labs(fill = "Subject") + theme(axis.text = element_text( colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text(color = "black", size = 7),
+  legend.text = element_text( color = "black", size = 7))
+dev.off()    
+
+##################################
+# margin 1 calculate for each cluster (cell type) the percentage of cell from each genotype group in the given cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(Ast_obj_Final), Ast_obj_Final$Genotype), margin = 1) *100)
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL", "AD", "PD"))
+
+png("Putamen_S3_Astrocyte_ClusterRenamed_CellFreqnInEachDisease.png",   
+    width = 3*300,        # 5 x 300 pixels
+    height = 4*300,
+    res = 300,            # 300 pixels per inch
+    pointsize = 6)        # smaller font size
+
+P <- ggplot(data_to_plot, aes(fill=Var1, y=Freq, x=Var2)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Diganostic group") + ylab("Frequency") +
+    scale_fill_manual(values = c( "coral3", "deepskyblue3", "goldenrod2") )
+    
+P + labs(fill = "Cell Identity") + theme(axis.text = element_text( colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text( color = "black", size = 7),
+  legend.text = element_text( color = "black", size = 7))
+dev.off()
+
+###################
+# margin 2 calculate for each subject the percentage of cells from each cell type
+data_to_plot <- as.data.frame(prop.table(table(Idents(Ast_obj_Final), Ast_obj_Final$orig.ident), margin = 2) *100)
+
+# get genotype
+#data_to_plot$Genotype <- sapply(strsplit(as.character(data_to_plot$Var2),"_"), `[`, 1)
+
+data_to_plot$Var2 <- factor(data_to_plot$Var2,levels = c("CTRL_Pu_62464", "CTRL_Pu_63756", "CTRL_Pu_64271", "CTRL_Pu_65229", "AD_Pu_12265", "AD_Pu_12545", "AD_Pu_61770", "AD_Pu_64951", "PD_Pu_13316", "PD_Pu_1654", "PD_Pu_5466", "PD_Pu_6087"))
+
+png("PT_WholePopulation_CellDistribution_CellTypeInEachPatient.png",   
+    width = 4*600,        # 5 x 300 pixels
+    height = 3*600,
+    res = 600,            # 300 pixels per inch
+    pointsize = 6)        # smaller font size
+
+P <- ggplot(data_to_plot, aes(fill=Var1, y=Freq, x=Var2)) + 
+    geom_bar(position="fill", stat="identity") + 
+  xlab("Cell cluster") + ylab("Frequency") +
+    scale_fill_manual(values = col_vector )
+    
+P + labs(fill = "Diagnosis") + theme(axis.text = element_text(family = "Courier", colour = "black", size = (7)), axis.text.x = element_text(hjust=1, angle = 90, size = 7), 
+  legend.title = element_text(family = "Courier", color = "black", size = 7),
+  legend.text = element_text(family = "Courier", color = "black", size = 7))
+dev.off()  
+```
+
+```{r save data}
+
+# save the workspace to the file .RData in the cwd
+# load a workspace into the current session
+# if you don't specify the path, the cwd is assumed
+load("myfile.RData") 
+save.image("Putamen_S3_Astrocyte_ClusterRenamed_ForPlotting.RData")
+
